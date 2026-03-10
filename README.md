@@ -8,6 +8,23 @@
 
 <!-- PORTUGUÊS -->
 
+**[English version below](#what-is-it)**
+
+## Sumário
+
+- [O que é](#o-que-é)
+- [O diferencial](#o-diferencial)
+- [Por que desenvolvi](#por-que-desenvolvi)
+- [Screenshots / Demo](#screenshots--demo)
+- [Instalação rápida](#instalação-rápida)
+- [Requisitos do sistema](#requisitos-do-sistema)
+- [Como executar](#como-executar)
+- [Como funciona](#como-funciona)
+- [Configuração](#configuração)
+- [Licença](#licença)
+
+---
+
 ## O que é
 
 **tomatty** é um timer Pomodoro que roda no terminal (TUI), construído com [Bun](https://bun.sh) e [@opentui/core](https://github.com/anomalyco/opentui).
@@ -40,6 +57,14 @@ Como ainda sou estudante (e precisava de uma ferramenta dessas pra agora, justam
 ## Screenshots / Demo
 
 ![](./tomatty.png)
+
+## Instalação rápida
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ivan-psg/tomatty/main/install.sh | bash
+```
+
+> O script detecta automaticamente a sua distro (Arch, Debian/Ubuntu, Fedora), instala as dependências necessárias, configura o `sudo` para o `rtcwake` e coloca o binário em `/usr/local/bin/tomatty`.
 
 ## Requisitos do sistema
 
@@ -386,6 +411,23 @@ MIT © 2026 — veja [LICENSE](./LICENSE)
 
 <!-- ENGLISH -->
 
+**[Versão em português acima](#o-que-é)**
+
+## Table of contents
+
+- [What is it](#what-is-it)
+- [What makes it different](#what-makes-it-different)
+- [Why I built it](#why-i-built-it)
+- [Screenshots / Demo](#screenshots--demo-1)
+- [Quick install](#quick-install)
+- [System requirements](#system-requirements)
+- [Running the project](#running-the-project)
+- [How it works](#how-it-works)
+- [Configuration](#configuration)
+- [License](#license)
+
+---
+
 ## What is it
 
 **tomatty** is a terminal-based Pomodoro timer (TUI), built with [Bun](https://bun.sh) and [@opentui/core](https://github.com/anomalyco/opentui).
@@ -418,6 +460,14 @@ Since I'm still a student (and needed a tool like this right now, for exactly th
 ## Screenshots / Demo
 
 ![](./tomatty.png)
+
+## Quick install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ivan-psg/tomatty/main/install.sh | bash
+```
+
+> The script auto-detects your distro (Arch, Debian/Ubuntu, Fedora), installs required dependencies, configures passwordless `sudo` for `rtcwake`, and places the binary at `/usr/local/bin/tomatty`.
 
 ## System requirements
 
