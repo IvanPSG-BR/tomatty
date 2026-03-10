@@ -20,6 +20,7 @@ import {
 import { Timer } from './timer';
 import { loadData, incrementPomodoro, type PomodoroData } from './storage';
 import { suspendForBreak } from './suspend';
+import { publishState, publishTick, clearStatus } from './panel';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Renderer
@@ -256,6 +257,9 @@ breakContainer.add(breakHint);
 renderer.root.add(mainContainer);
 renderer.root.add(breakContainer);
 
+// Publish initial state so panels see the file immediately on startup
+publishState(state, timer.remaining, taskName);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // UI update helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -292,6 +296,7 @@ renderer.setFrameCallback(async (deltaMs) => {
   if (state === AppState.WORKING) {
     timer.tick(deltaMs);
     asciiTimer.text = formatTime(timer.remaining);
+    publishTick(state, timer.remaining, taskName);
   }
 });
 
@@ -307,6 +312,7 @@ timer.onComplete = () => {
 async function handleWorkComplete(): Promise<void> {
   state = AppState.SUSPENDING;
   renderer.dropLive();
+  publishState(state, 0, taskName);
 
   // Show suspending screen
   showBreakView();
@@ -341,6 +347,7 @@ async function handleWorkComplete(): Promise<void> {
   state = AppState.IDLE_AFTER_BREAK;
   timer.reset(WORK_DURATION);
   skipPressCount = 0;
+  publishState(state, WORK_DURATION, taskName);
 
   // Update break/welcome view
   breakTitle.text = 'WELCOME BACK';
@@ -392,6 +399,7 @@ renderer.keyInput.on('keypress', (key) => {
   // ── Ctrl+C / q: quit ─────────────────────────────────────────────────────
   if ((key.ctrl && key.name === 'c') || key.name === 'q') {
     if (isEditing) return; // let input consume it
+    clearStatus();
     renderer.destroy();
     process.exit(0);
   }
@@ -415,6 +423,7 @@ renderer.keyInput.on('keypress', (key) => {
         timer.start();
         renderer.requestLive();
         refreshMainUI();
+        publishState(state, timer.remaining, taskName);
       } else if (state === AppState.WORKING) {
         state = AppState.PAUSED;
         timer.pause();
@@ -422,6 +431,7 @@ renderer.keyInput.on('keypress', (key) => {
         sessionLabel.content = 'PAUSED 🍅';
         sessionLabel.fg = COLOR_WHITE;
         refreshMainUI();
+        publishState(state, timer.remaining, taskName);
       } else if (state === AppState.PAUSED) {
         state = AppState.WORKING;
         timer.start();
@@ -429,6 +439,7 @@ renderer.keyInput.on('keypress', (key) => {
         sessionLabel.content = 'WORK SESSION 🍅';
         sessionLabel.fg = COLOR_WORK;
         refreshMainUI();
+        publishState(state, timer.remaining, taskName);
       }
       break;
     }
@@ -444,6 +455,7 @@ renderer.keyInput.on('keypress', (key) => {
       sessionLabel.content = 'READY 🍅';
       sessionLabel.fg = COLOR_WHITE;
       refreshMainUI();
+      publishState(state, WORK_DURATION, taskName);
       break;
     }
 

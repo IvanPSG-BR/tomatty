@@ -121,6 +121,7 @@ tomatty
 | `src/timer.ts`   | Contagem regressiva orientada a delta-time (ticks do renderer)  |
 | `src/suspend.ts` | Chama `sudo rtcwake` e aguarda o sistema retomar                |
 | `src/storage.ts` | Persiste contagem de pomodoros em `~/.config/tomatty/data.json` |
+| `src/panel.ts`   | Publica status em `~/.cache/tomatty/status.json` (painéis)      |
 | `src/state.ts`   | Enum `AppState`                                                 |
 | `src/config.ts`  | Durações, número de sessões por ciclo e paleta de cores         |
 
@@ -137,6 +138,231 @@ Os dados são salvos em `~/.config/tomatty/data.json`:
 ```
 
 O contador diário (`count`) reseta automaticamente no dia seguinte. O total acumulado (`totalEver`) nunca é zerado.
+
+### Status para painéis externos
+
+Enquanto o tomatty está em execução, ele mantém o arquivo `~/.cache/tomatty/status.json` atualizado a cada segundo:
+
+```json
+{
+  "state": "WORKING",
+  "remaining": 1342,
+  "taskName": "study",
+  "updatedAt": "2026-03-09T14:30:18.000Z"
+}
+```
+
+| Campo       | Tipo   | Descrição                                                             |
+| ----------- | ------ | --------------------------------------------------------------------- |
+| `state`     | string | `IDLE` \| `WORKING` \| `PAUSED` \| `SUSPENDING` \| `IDLE_AFTER_BREAK` |
+| `remaining` | number | Segundos inteiros restantes na sessão atual                           |
+| `taskName`  | string | Nome da tarefa atual (string vazia se não definida)                   |
+| `updatedAt` | string | ISO 8601 do último update — útil para compensar latência de polling   |
+
+O arquivo é **removido automaticamente** quando o tomatty encerra (`Q` / `Ctrl+C`), então a ausência do arquivo significa que o app não está rodando.
+
+Nenhum painel exibe esse arquivo de forma automática — é necessário configurar um módulo/script em cada um. O processo geral é sempre o mesmo:
+
+1. Criar o script `tomatty-panel`
+2. Configurar o módulo no painel
+3. Recarregar o painel
+
+#### Passo 1 — Criar o script `tomatty-panel`
+
+Crie o arquivo `~/.local/bin/tomatty-panel`:
+
+```bash
+#!/usr/bin/env bash
+python3 - <<'PY'
+import json, os, math
+from datetime import datetime, timezone
+
+p = os.path.expanduser("~/.cache/tomatty/status.json")
+if not os.path.exists(p):
+    print("🍅 off")
+    raise SystemExit(0)
+
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        d = json.load(f)
+
+    r = int(d.get("remaining", 0))
+    s = d.get("state", "?")
+    u = d.get("updatedAt", "")
+
+    # Compensa latência de polling em sessões ativas
+    if s == "WORKING" and u:
+        t = datetime.fromisoformat(u.replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - t).total_seconds()
+        r = max(0, r - math.ceil(age))
+
+    print(f"🍅 {r//60:02d}:{r%60:02d} [{s}]")
+except Exception:
+    print("🍅 --:-- [?]")
+PY
+```
+
+Torne-o executável:
+
+```sh
+chmod +x ~/.local/bin/tomatty-panel
+```
+
+Verifique se `~/.local/bin` está no seu `$PATH`. Se não estiver, adicione ao `~/.bashrc` / `~/.zshrc`:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+#### Passo 2 — Configurar no seu painel
+
+---
+
+**XFCE — xfce4-genmon-plugin**
+
+Instale o plugin (se não tiver):
+
+```sh
+# Debian/Ubuntu
+sudo apt install xfce4-genmon-plugin
+# Arch
+sudo pacman -S xfce4-genmon-plugin
+```
+
+No painel:
+
+1. Clique com o botão direito no painel → **Adicionar novos itens**
+2. Adicione **Generic Monitor**
+3. Clique com o botão direito no item adicionado → **Propriedades**
+4. Preencha:
+   - **Command:** `tomatty-panel`
+   - **Period:** `1` (segundos)
+   - Desmarque **Label** (ou deixe vazio)
+5. Clique em **Close**
+
+---
+
+**Waybar**
+
+Em `~/.config/waybar/config`, adicione o módulo:
+
+```json
+"custom/tomatty": {
+    "exec": "tomatty-panel",
+    "interval": 1,
+    "format": "{}",
+    "return-type": ""
+}
+```
+
+Adicione `"custom/tomatty"` à lista `"modules-left"`, `"modules-center"` ou `"modules-right"` conforme preferir. Depois recarregue:
+
+```sh
+killall waybar && waybar &
+```
+
+---
+
+**Polybar**
+
+Em `~/.config/polybar/config.ini`, adicione:
+
+```ini
+[module/tomatty]
+type = custom/script
+exec = tomatty-panel
+interval = 1
+```
+
+Adicione `tomatty` aos módulos da barra (ex.: `modules-right = tomatty`). Depois recarregue:
+
+```sh
+polybar-msg cmd restart
+```
+
+---
+
+**i3blocks**
+
+Em `~/.config/i3blocks/config` (ou `/etc/i3blocks.conf`), adicione:
+
+```ini
+[tomatty]
+command=tomatty-panel
+interval=1
+```
+
+Adicione `i3blocks` na linha `status_command` do `~/.config/i3/config` se ainda não estiver:
+
+```
+bar {
+    status_command i3blocks
+}
+```
+
+Recarregue o i3:
+
+```sh
+i3-msg reload
+```
+
+---
+
+**tmux**
+
+Em `~/.tmux.conf`:
+
+```sh
+set -g status-right '#(tomatty-panel)'
+set -g status-interval 1
+```
+
+Recarregue:
+
+```sh
+tmux source-file ~/.tmux.conf
+```
+
+---
+
+**KDE Plasma — System Monitor widget**
+
+O KDE não tem suporte nativo a scripts arbitrários na barra, mas é possível via **Command Output** widget:
+
+1. Clique com o botão direito na barra → **Adicionar widgets**
+2. Procure por **Command Output** (ou **Comando**)
+3. Configure:
+   - **Command:** `tomatty-panel`
+   - **Update interval:** `1000` ms
+4. Confirme e reposicione o widget
+
+> Se o widget não estiver disponível, instale via **Obter novos widgets** na loja do KDE.
+
+---
+
+**GNOME Shell**
+
+O GNOME não exibe texto arbitrário no top bar sem extensão. A opção mais simples é a extensão **[extensions.gnome.org — Custom Command Toggle](https://extensions.gnome.org/)** ou qualquer extensão que execute scripts shell no painel.
+
+A mais usada para esse fim é o **[argos](https://github.com/p-e-w/argos)** (BitBar para GNOME):
+
+1. Instale o argos via extensão GNOME
+2. Crie `~/.config/argos/tomatty.1s.sh` (o `1s` define o intervalo):
+
+```bash
+#!/usr/bin/env bash
+tomatty-panel
+```
+
+```sh
+chmod +x ~/.config/argos/tomatty.1s.sh
+```
+
+O argos recarrega automaticamente.
+
+#### Nota sobre latência
+
+Todo painel baseado em **polling** (intervalo fixo de 1 s) pode apresentar até ~1 s de defasagem em relação ao timer real. O script `tomatty-panel` já compensa esse atraso usando o campo `updatedAt` quando o estado for `WORKING`. Nos demais estados (pausa, idle) a latência é irrelevante.
 
 ## Configuração
 
@@ -267,14 +493,15 @@ tomatty
 
 ### Modules
 
-| File             | Responsibility                                            |
-| ---------------- | --------------------------------------------------------- |
-| `src/index.ts`   | Main UI, event loop, state machine                        |
-| `src/timer.ts`   | Countdown driven by delta-time ticks from the renderer    |
-| `src/suspend.ts` | Calls `sudo rtcwake` and waits for the system to resume   |
-| `src/storage.ts` | Persists pomodoro counts to `~/.config/tomatty/data.json` |
-| `src/state.ts`   | `AppState` enum                                           |
-| `src/config.ts`  | Durations, sessions-per-cycle and color palette           |
+| File             | Responsibility                                              |
+| ---------------- | ----------------------------------------------------------- |
+| `src/index.ts`   | Main UI, event loop, state machine                          |
+| `src/timer.ts`   | Countdown driven by delta-time ticks from the renderer      |
+| `src/suspend.ts` | Calls `sudo rtcwake` and waits for the system to resume     |
+| `src/storage.ts` | Persists pomodoro counts to `~/.config/tomatty/data.json`   |
+| `src/panel.ts`   | Publishes status to `~/.cache/tomatty/status.json` (panels) |
+| `src/state.ts`   | `AppState` enum                                             |
+| `src/config.ts`  | Durations, sessions-per-cycle and color palette             |
 
 ### Persistence
 
@@ -289,6 +516,229 @@ Data is stored at `~/.config/tomatty/data.json`:
 ```
 
 The daily counter (`count`) resets automatically the next day. The cumulative total (`totalEver`) never resets.
+
+### Panel integration
+
+While tomatty is running it keeps `~/.cache/tomatty/status.json` updated every second:
+
+```json
+{
+  "state": "WORKING",
+  "remaining": 1342,
+  "taskName": "study",
+  "updatedAt": "2026-03-09T14:30:18.000Z"
+}
+```
+
+| Field       | Type   | Description                                                              |
+| ----------- | ------ | ------------------------------------------------------------------------ |
+| `state`     | string | `IDLE` \| `WORKING` \| `PAUSED` \| `SUSPENDING` \| `IDLE_AFTER_BREAK`    |
+| `remaining` | number | Integer seconds remaining in the current session                         |
+| `taskName`  | string | Current task name (empty string if not set)                              |
+| `updatedAt` | string | ISO 8601 timestamp of the last update — useful to compensate polling lag |
+
+The file is **automatically removed** when tomatty exits (`Q` / `Ctrl+C`), so its absence means the app is not running.
+
+No panel displays this file automatically — you need to configure a module/script in each one. The general process is always the same:
+
+1. Create the `tomatty-panel` script
+2. Configure the module in your panel
+3. Reload the panel
+
+#### Step 1 — Create the `tomatty-panel` script
+
+Create the file `~/.local/bin/tomatty-panel`:
+
+```bash
+#!/usr/bin/env bash
+python3 - <<'PY'
+import json, os, math
+from datetime import datetime, timezone
+
+p = os.path.expanduser("~/.cache/tomatty/status.json")
+if not os.path.exists(p):
+    print("🍅 off")
+    raise SystemExit(0)
+
+try:
+    with open(p, "r", encoding="utf-8") as f:
+        d = json.load(f)
+
+    r = int(d.get("remaining", 0))
+    s = d.get("state", "?")
+    u = d.get("updatedAt", "")
+
+    # Compensate polling lag during active sessions
+    if s == "WORKING" and u:
+        t = datetime.fromisoformat(u.replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - t).total_seconds()
+        r = max(0, r - math.ceil(age))
+
+    print(f"🍅 {r//60:02d}:{r%60:02d} [{s}]")
+except Exception:
+    print("🍅 --:-- [?]")
+PY
+```
+
+Make it executable:
+
+```sh
+chmod +x ~/.local/bin/tomatty-panel
+```
+
+Make sure `~/.local/bin` is in your `$PATH`. If not, add it to `~/.bashrc` / `~/.zshrc`:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+#### Step 2 — Configure in your panel
+
+---
+
+**XFCE — xfce4-genmon-plugin**
+
+Install the plugin if needed:
+
+```sh
+# Debian/Ubuntu
+sudo apt install xfce4-genmon-plugin
+# Arch
+sudo pacman -S xfce4-genmon-plugin
+```
+
+In the panel:
+
+1. Right-click the panel → **Add New Items**
+2. Add **Generic Monitor**
+3. Right-click the new item → **Properties**
+4. Fill in:
+   - **Command:** `tomatty-panel`
+   - **Period:** `1` (seconds)
+   - Clear the **Label** field (optional)
+5. Click **Close**
+
+---
+
+**Waybar**
+
+In `~/.config/waybar/config`, add the module:
+
+```json
+"custom/tomatty": {
+    "exec": "tomatty-panel",
+    "interval": 1,
+    "format": "{}",
+    "return-type": ""
+}
+```
+
+Add `"custom/tomatty"` to `"modules-left"`, `"modules-center"` or `"modules-right"` as preferred. Then reload:
+
+```sh
+killall waybar && waybar &
+```
+
+---
+
+**Polybar**
+
+In `~/.config/polybar/config.ini`, add:
+
+```ini
+[module/tomatty]
+type = custom/script
+exec = tomatty-panel
+interval = 1
+```
+
+Add `tomatty` to the bar modules (e.g. `modules-right = tomatty`). Then reload:
+
+```sh
+polybar-msg cmd restart
+```
+
+---
+
+**i3blocks**
+
+In `~/.config/i3blocks/config` (or `/etc/i3blocks.conf`), add:
+
+```ini
+[tomatty]
+command=tomatty-panel
+interval=1
+```
+
+Make sure `i3blocks` is set as the `status_command` in `~/.config/i3/config`:
+
+```
+bar {
+    status_command i3blocks
+}
+```
+
+Reload i3:
+
+```sh
+i3-msg reload
+```
+
+---
+
+**tmux**
+
+In `~/.tmux.conf`:
+
+```sh
+set -g status-right '#(tomatty-panel)'
+set -g status-interval 1
+```
+
+Reload:
+
+```sh
+tmux source-file ~/.tmux.conf
+```
+
+---
+
+**KDE Plasma — System Monitor widget**
+
+KDE does not natively run arbitrary scripts in the panel bar, but the **Command Output** widget works:
+
+1. Right-click the panel → **Add Widgets**
+2. Search for **Command Output**
+3. Configure:
+   - **Command:** `tomatty-panel`
+   - **Update interval:** `1000` ms
+4. Confirm and reposition the widget
+
+> If the widget is unavailable, install it via **Get New Widgets** in the KDE store.
+
+---
+
+**GNOME Shell**
+
+GNOME does not display arbitrary text in the top bar without an extension. The simplest option is **[argos](https://github.com/p-e-w/argos)** (BitBar for GNOME):
+
+1. Install argos as a GNOME extension
+2. Create `~/.config/argos/tomatty.1s.sh` (the `1s` sets the refresh interval):
+
+```bash
+#!/usr/bin/env bash
+tomatty-panel
+```
+
+```sh
+chmod +x ~/.config/argos/tomatty.1s.sh
+```
+
+argos reloads automatically.
+
+#### Note on latency
+
+All polling-based panels (fixed 1 s interval) may show up to ~1 s of lag behind the real timer. The `tomatty-panel` script already compensates for this using the `updatedAt` field when the state is `WORKING`. For other states (paused, idle) the latency is irrelevant.
 
 ## Configuration
 
