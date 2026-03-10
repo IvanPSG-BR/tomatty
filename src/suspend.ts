@@ -22,7 +22,7 @@ export function suspendForBreak(breakSeconds: number): Promise<SuspendResult> {
   return new Promise((resolve) => {
     const proc = spawn(
       'sudo',
-      ['/usr/sbin/rtcwake', '-m', 'suspend', '-s', String(breakSeconds)],
+      ['rtcwake', '-m', 'suspend', '-s', String(breakSeconds)],
       { stdio: 'ignore' }
     );
 
