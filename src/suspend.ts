@@ -10,6 +10,11 @@ export interface SuspendResult {
 /**
  * Suspends the system using rtcwake and waits until it resumes.
  *
+ * Uses `-m mem` (ACPI S3 suspend-to-RAM), which is the standard mode name
+ * accepted by the kernel's power/state interface. The alias "suspend" is not
+ * recognised on all distributions and was causing rtcwake to exit immediately
+ * without suspending the machine.
+ *
  * Requires passwordless sudo for rtcwake. Set it up once with:
  *   echo "$USER ALL=(ALL) NOPASSWD: /usr/sbin/rtcwake" \
  *     | sudo tee /etc/sudoers.d/tomatty
@@ -19,16 +24,30 @@ export interface SuspendResult {
 export function suspendForBreak(breakSeconds: number): Promise<SuspendResult> {
   const scheduledWakeAt = Date.now() + breakSeconds * 1000;
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const proc = spawn(
       'sudo',
-      ['/usr/sbin/rtcwake', '-m', 'suspend', '-s', String(breakSeconds)],
-      { stdio: 'ignore' }
+      ['/usr/sbin/rtcwake', '-m', 'mem', '-s', String(breakSeconds)],
+      { stdio: ['ignore', 'ignore', 'pipe'] }
     );
+
+    let stderrOutput = '';
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      stderrOutput += chunk.toString();
+    });
 
     // Fires when rtcwake exits — which happens when the system resumes
     // (either from the RTC alarm or a manual wake by the user)
-    proc.on('exit', () => {
+    proc.on('exit', (code) => {
+      if (code !== 0) {
+        reject(
+          new Error(
+            `rtcwake exited with code ${code}${stderrOutput ? ': ' + stderrOutput.trim() : ''}`
+          )
+        );
+        return;
+      }
+
       const now = Date.now();
       const msRemaining = Math.max(0, scheduledWakeAt - now);
       const remainingSeconds = Math.round(msRemaining / 1000);

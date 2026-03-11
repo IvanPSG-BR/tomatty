@@ -330,7 +330,26 @@ async function handleWorkComplete(): Promise<void> {
   await sleep(600);
 
   // Suspend — this awaits until the system resumes
-  const result = await suspendForBreak(BREAK_DURATION);
+  let result: Awaited<ReturnType<typeof suspendForBreak>>;
+  try {
+    result = await suspendForBreak(BREAK_DURATION);
+  } catch (err) {
+    // rtcwake failed (e.g. unsupported mode, permission denied).
+    // Show the error in the break view and fall back to IDLE so the user
+    // can still interact with the app.
+    const msg = err instanceof Error ? err.message : String(err);
+    breakTitle.text = 'SUSPEND FAILED';
+    breakTitle.color = COLOR_WORK;
+    breakSubtitle.content = msg;
+    breakCountText.visible = false;
+    breakHint.content = '[Q] Quit';
+    breakHint.visible = true;
+    state = AppState.IDLE;
+    timer.reset(WORK_DURATION);
+    publishState(state, WORK_DURATION, taskName);
+    renderer.requestRender();
+    return;
+  }
 
   // ── System has resumed ──
 
