@@ -113,6 +113,30 @@ tomatty
 
 > **Nota:** a biblioteca nativa `libopentui.so` é embutida no binário pelo `bun build --compile`. Nenhuma dependência extra é necessária em produção além do sudoers configurado.
 
+### Argumentos de linha de comando
+
+```
+tomatty [opções]
+
+Opções:
+  -w, --worktime <minutos>   Define a duração da sessão de trabalho e salva
+  -b, --breaktime <minutos>  Define a duração do intervalo e salva
+  -d, --default              Restaura as durações padrão (25 min / 5 min) e salva
+                             Não pode ser usado junto com -w ou -b
+  -h, --help                 Exibe esta ajuda e encerra
+
+Notas:
+  As durações são persistidas em ~/.config/tomatty/settings.json e valem para
+  todas as sessões futuras até serem alteradas novamente.
+  Executar sem argumentos usa as durações salvas (padrão: 25 / 5).
+
+Exemplos:
+  tomatty                     # usa as durações salvas
+  tomatty -w 45 -b 15         # define 45 min de trabalho e 15 min de pausa
+  tomatty -w 50               # define 50 min de trabalho, mantém o intervalo atual
+  tomatty -d                  # restaura para 25 / 5
+```
+
 ## Como funciona
 
 ### Controles
@@ -391,7 +415,7 @@ Todo painel baseado em **polling** (intervalo fixo de 1 s) pode apresentar até 
 
 ## Configuração
 
-Edite `src/config.ts` antes de fazer o build:
+As durações são configuradas via argumentos de linha de comando e persistidas em `~/.config/tomatty/settings.json` (ver seção acima). Para alterar os valores padrão do binário, edite `src/config.ts` antes do build:
 
 | Constante             | Padrão             | Descrição                                 |
 | --------------------- | ------------------ | ----------------------------------------- |
@@ -515,6 +539,30 @@ tomatty
 ```
 
 > **Note:** the native `libopentui.so` library is embedded into the binary by `bun build --compile`. No extra dependencies are needed in production beyond the sudoers entry above.
+
+### Command-line arguments
+
+```
+tomatty [options]
+
+Options:
+  -w, --worktime <minutes>   Set work session duration in minutes and save it
+  -b, --breaktime <minutes>  Set break duration in minutes and save it
+  -d, --default              Reset durations to defaults (25 min / 5 min) and save
+                             Cannot be used together with -w or -b
+  -h, --help                 Show this help message and exit
+
+Notes:
+  Duration changes are persisted to ~/.config/tomatty/settings.json and
+  apply to every future session until changed again.
+  Running tomatty without flags uses the last saved durations (default: 25 / 5).
+
+Examples:
+  tomatty                     # use saved durations
+  tomatty -w 45 -b 15         # set 45-min work, 15-min break and start
+  tomatty -w 50               # set 50-min work, keep current break time
+  tomatty -d                  # reset to 25 / 5
+```
 
 ## How it works
 
@@ -792,7 +840,7 @@ All polling-based panels (fixed 1 s interval) may show up to ~1 s of lag behind 
 
 ## Configuration
 
-Edit `src/config.ts` before building:
+Durations are configured via command-line arguments and persisted to `~/.config/tomatty/settings.json` (see section above). To change the built-in fallback defaults, edit `src/config.ts` before building:
 
 | Constant              | Default            | Description                       |
 | --------------------- | ------------------ | --------------------------------- |
