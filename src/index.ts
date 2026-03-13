@@ -9,8 +9,6 @@ import {
 
 import { AppState } from './state';
 import {
-  WORK_DURATION,
-  BREAK_DURATION,
   POMODOROS_PER_CYCLE,
   COLOR_WORK,
   COLOR_BREAK,
@@ -18,9 +16,116 @@ import {
   COLOR_BORDER,
 } from './config';
 import { Timer } from './timer';
-import { loadData, incrementPomodoro, type PomodoroData } from './storage';
+import { loadData, incrementPomodoro, loadSettings, saveSettings, resetSettings, type PomodoroData } from './storage';
 import { suspendForBreak } from './suspend';
 import { publishState, publishTick, clearStatus } from './panel';
+import { bell } from './sound';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLI argument parsing + settings persistence
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HELP_TEXT = `
+tomatty — Pomodoro timer with automatic system suspend
+
+Usage:
+  tomatty [options]
+
+Options:
+  -w, --worktime <minutes>   Set work session duration in minutes and save it
+  -b, --breaktime <minutes>  Set break duration in minutes and save it
+  -d, --default              Reset durations to defaults (25 min / 5 min) and save
+                             Cannot be used together with -w or -b
+  -h, --help                 Show this help message and exit
+
+Notes:
+  Duration changes are persisted to ~/.config/tomatty/settings.json and
+  apply to every future session until changed again.
+  Running tomatty without flags uses the last saved durations.
+
+Examples:
+  tomatty                        # use saved durations (default: 25 / 5)
+  tomatty -w 45 -b 15            # set 45-min work, 15-min break and start
+  tomatty -w 50                  # set 50-min work, keep current break time
+  tomatty -d                     # reset to 25 / 5
+`.trim();
+
+async function parseArgs(): Promise<{ workSeconds: number; breakSeconds: number }> {
+  const args = process.argv.slice(2);
+  let workMinutes: number | null = null;
+  let breakMinutes: number | null = null;
+  let useDefault = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '-h' || arg === '--help') {
+      console.log(HELP_TEXT);
+      process.exit(0);
+    }
+
+    if (arg === '-d' || arg === '--default') {
+      useDefault = true;
+      continue;
+    }
+
+    if (arg === '-w' || arg === '--worktime' || arg === '-b' || arg === '--breaktime') {
+      const next = args[i + 1];
+      const isWork = arg === '-w' || arg === '--worktime';
+      const label = isWork ? '--worktime' : '--breaktime';
+
+      if (next === undefined || next.startsWith('-')) {
+        console.error(`Error: ${label} requires a value`);
+        console.error(`Run 'tomatty --help' for usage.`);
+        process.exit(1);
+      }
+
+      const value = Number(next);
+      if (!Number.isInteger(value) || value <= 0) {
+        console.error(`Error: ${label} must be a positive integer, got: ${next}`);
+        console.error(`Run 'tomatty --help' for usage.`);
+        process.exit(1);
+      }
+
+      if (isWork) workMinutes = value;
+      else breakMinutes = value;
+
+      i++; // skip value token
+      continue;
+    }
+
+    // Unknown argument
+    console.error(`Error: unknown argument '${arg}'`);
+    console.error(`Run 'tomatty --help' for usage.`);
+    process.exit(1);
+  }
+
+  // --default cannot coexist with -w / -b
+  if (useDefault && (workMinutes !== null || breakMinutes !== null)) {
+    console.error(`Error: --default cannot be used together with --worktime or --breaktime`);
+    console.error(`Run 'tomatty --help' for usage.`);
+    process.exit(1);
+  }
+
+  if (useDefault) {
+    const settings = await resetSettings();
+    return { workSeconds: settings.workDuration, breakSeconds: settings.breakDuration };
+  }
+
+  if (workMinutes !== null || breakMinutes !== null) {
+    const patch: { workDuration?: number; breakDuration?: number } = {};
+    if (workMinutes !== null) patch.workDuration = workMinutes * 60;
+    if (breakMinutes !== null) patch.breakDuration = breakMinutes * 60;
+    const settings = await saveSettings(patch);
+    return { workSeconds: settings.workDuration, breakSeconds: settings.breakDuration };
+  }
+
+  // No flags — load persisted settings
+  const settings = await loadSettings();
+  return { workSeconds: settings.workDuration, breakSeconds: settings.breakDuration };
+}
+
+const { workSeconds: WORK_SECS, breakSeconds: BREAK_SECS } = await parseArgs();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Renderer
@@ -50,7 +155,7 @@ let skipPressCount = 0;
 // Timer
 // ─────────────────────────────────────────────────────────────────────────────
 
-const timer = new Timer(WORK_DURATION);
+const timer = new Timer(WORK_SECS);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -82,12 +187,6 @@ function controlsHint(s: AppState): string {
       return '[Space] Start  [E] Task  [Q] Quit';
     default:
       return '';
-  }
-}
-
-function bell(times: number = 1): void {
-  for (let i = 0; i < times; i++) {
-    process.stdout.write('\x07');
   }
 }
 
@@ -145,7 +244,7 @@ const timerContentBox = new BoxRenderable(renderer, {
 });
 
 const asciiTimer = new ASCIIFontRenderable(renderer, {
-  text: formatTime(WORK_DURATION),
+  text: formatTime(WORK_SECS),
   font: 'block',
   color: COLOR_WHITE,
 });
@@ -229,7 +328,7 @@ const breakTitle = new ASCIIFontRenderable(renderer, {
 });
 
 const breakSubtitle = new TextRenderable(renderer, {
-  content: '5-minute break scheduled...',
+  content: `${BREAK_SECS / 60}-minute break scheduled...`,
   fg: COLOR_WHITE,
 });
 
@@ -318,19 +417,38 @@ async function handleWorkComplete(): Promise<void> {
   showBreakView();
   breakTitle.text = 'SUSPENDING';
   breakTitle.color = COLOR_WORK;
-  breakSubtitle.content = `${BREAK_DURATION / 60}-minute break scheduled...`;
+  breakSubtitle.content = `${BREAK_SECS / 60}-minute break scheduled...`;
   breakCountText.visible = false;
   breakHint.visible = false;
   renderer.requestRender();
 
-  // Bell once — "work session ended"
-  bell(1);
+  // Bell once — "work session ended, break starting"
+  await bell(1);
 
   // Give the UI a moment to render before the system suspends
   await sleep(600);
 
   // Suspend — this awaits until the system resumes
-  const result = await suspendForBreak(BREAK_DURATION);
+  let result: Awaited<ReturnType<typeof suspendForBreak>>;
+  try {
+    result = await suspendForBreak(BREAK_SECS);
+  } catch (err) {
+    // rtcwake failed (e.g. unsupported mode, permission denied).
+    // Show the error in the break view and fall back to IDLE so the user
+    // can still interact with the app.
+    const msg = err instanceof Error ? err.message : String(err);
+    breakTitle.text = 'SUSPEND FAILED';
+    breakTitle.color = COLOR_WORK;
+    breakSubtitle.content = msg;
+    breakCountText.visible = false;
+    breakHint.content = '[Q] Quit';
+    breakHint.visible = true;
+    state = AppState.IDLE;
+    timer.reset(WORK_SECS);
+    publishState(state, WORK_SECS, taskName);
+    renderer.requestRender();
+    return;
+  }
 
   // ── System has resumed ──
 
@@ -338,16 +456,13 @@ async function handleWorkComplete(): Promise<void> {
   data = await incrementPomodoro(data);
 
   // Bell three times — "break is over, come back"
-  for (let i = 0; i < 3; i++) {
-    bell(1);
-    await sleep(350);
-  }
+  await bell(3);
 
   // Transition to IDLE_AFTER_BREAK
   state = AppState.IDLE_AFTER_BREAK;
-  timer.reset(WORK_DURATION);
+  timer.reset(WORK_SECS);
   skipPressCount = 0;
-  publishState(state, WORK_DURATION, taskName);
+  publishState(state, WORK_SECS, taskName);
 
   // Update break/welcome view
   breakTitle.text = 'WELCOME BACK';
@@ -449,13 +564,13 @@ renderer.keyInput.on('keypress', (key) => {
       if (state !== AppState.WORKING && state !== AppState.PAUSED) break;
       if (state === AppState.WORKING) renderer.dropLive();
       state = AppState.IDLE;
-      timer.reset(WORK_DURATION);
-      asciiTimer.text = formatTime(WORK_DURATION);
+      timer.reset(WORK_SECS);
+      asciiTimer.text = formatTime(WORK_SECS);
       asciiTimer.color = COLOR_WHITE;
       sessionLabel.content = 'READY 🍅';
       sessionLabel.fg = COLOR_WHITE;
       refreshMainUI();
-      publishState(state, WORK_DURATION, taskName);
+      publishState(state, WORK_SECS, taskName);
       break;
     }
 
