@@ -61,7 +61,7 @@ Como ainda sou estudante (e precisava de uma ferramenta dessas pra agora, justam
 ## Instalação rápida
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ivan-psg/tomatty/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ivanpsg-br/tomatty/main/install.sh | bash
 ```
 
 > O script detecta automaticamente a sua distro (Arch, Debian/Ubuntu, Fedora), instala as dependências necessárias, configura o `sudo` para o `rtcwake` e coloca o binário em `/usr/local/bin/tomatty`.
