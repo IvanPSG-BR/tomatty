@@ -181,7 +181,58 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Build binary
+# 6. Optional: install paplay for audible bell (PulseAudio / PipeWire)
+# ─────────────────────────────────────────────────────────────────────────────
+
+echo ""
+info "Checking for paplay (optional — enables audible bell SFX)..."
+
+if command -v paplay &>/dev/null; then
+  success "paplay already installed at $(command -v paplay)"
+else
+  warn "paplay not found."
+  echo ""
+  read -r -p "  Install paplay for audible bell sound effects? [Y/n] " PAPLAY_ANSWER
+  PAPLAY_ANSWER="${PAPLAY_ANSWER:-Y}"
+
+  if [[ "$PAPLAY_ANSWER" =~ ^[Yy]$ ]]; then
+    PAPLAY_OK=false
+    case "$PKG_MANAGER" in
+      pacman)
+        if sudo pacman -S --noconfirm libpulse 2>/dev/null; then
+          PAPLAY_OK=true
+        fi
+        ;;
+      apt)
+        if sudo apt-get install -y pulseaudio-utils 2>/dev/null; then
+          PAPLAY_OK=true
+        fi
+        ;;
+      dnf)
+        if sudo dnf install -y pulseaudio-utils 2>/dev/null; then
+          PAPLAY_OK=true
+        fi
+        ;;
+      *)
+        warn "Cannot install paplay automatically on this distro."
+        warn "Install 'pulseaudio-utils' (or 'libpulse') manually for audible bells."
+        ;;
+    esac
+
+    if [[ "$PAPLAY_OK" == "true" ]] && command -v paplay &>/dev/null; then
+      success "paplay installed — audible bell SFX enabled"
+    else
+      warn "paplay installation failed or skipped."
+      warn "tomatty will fall back to the terminal BEL character instead."
+    fi
+  else
+    info "Skipping paplay. tomatty will use the terminal BEL character for bell sounds."
+    warn "Note: the terminal BEL may be silent depending on your terminal configuration."
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Build binary
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -205,7 +256,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Install binary to /usr/local/bin
+# 8. Install binary to /usr/local/bin
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -215,7 +266,7 @@ sudo install -m 755 "$SCRIPT_DIR/dist/tomatty" /usr/local/bin/tomatty
 success "Installed to /usr/local/bin/tomatty"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Done
+# 9. Done
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""

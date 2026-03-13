@@ -75,6 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/ivan-psg/tomatty/main/install.sh | 
 | **`rtcwake`**                       | Fornecido pelo pacote `util-linux` (já presente na maioria das distros) |
 | **`sudo` sem senha para `rtcwake`** | Necessário para suspender o sistema (ver configuração abaixo)           |
 | **Terminal**                        | Suporte a cores TrueColor recomendado (kitty, alacritty, ghostty, etc.) |
+| **`paplay`** *(opcional)*           | Para efeitos sonoros audíveis (pacote `pulseaudio-utils` / `libpulse`). Sem ele, o sino usa o BEL do terminal. |
 
 ### Configurando sudo para rtcwake
 
@@ -502,6 +503,7 @@ curl -fsSL https://raw.githubusercontent.com/ivan-psg/tomatty/main/install.sh | 
 | **`rtcwake`**                         | Provided by the `util-linux` package (present on most distros)  |
 | **Passwordless `sudo` for `rtcwake`** | Required to suspend the system (see setup below)                |
 | **Terminal**                          | TrueColor support recommended (kitty, alacritty, ghostty, etc.) |
+| **`paplay`** *(optional)*             | For audible bell SFX (`pulseaudio-utils` / `libpulse` package). Without it, tomatty falls back to the terminal BEL character. |
 
 ### Configuring sudo for rtcwake
 

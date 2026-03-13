@@ -19,6 +19,7 @@ import { Timer } from './timer';
 import { loadData, incrementPomodoro, loadSettings, saveSettings, resetSettings, type PomodoroData } from './storage';
 import { suspendForBreak } from './suspend';
 import { publishState, publishTick, clearStatus } from './panel';
+import { bell } from './sound';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLI argument parsing + settings persistence
@@ -186,12 +187,6 @@ function controlsHint(s: AppState): string {
       return '[Space] Start  [E] Task  [Q] Quit';
     default:
       return '';
-  }
-}
-
-function bell(times: number = 1): void {
-  for (let i = 0; i < times; i++) {
-    process.stdout.write('\x07');
   }
 }
 
@@ -427,8 +422,8 @@ async function handleWorkComplete(): Promise<void> {
   breakHint.visible = false;
   renderer.requestRender();
 
-  // Bell once — "work session ended"
-  bell(1);
+  // Bell once — "work session ended, break starting"
+  await bell(1);
 
   // Give the UI a moment to render before the system suspends
   await sleep(600);
@@ -461,10 +456,7 @@ async function handleWorkComplete(): Promise<void> {
   data = await incrementPomodoro(data);
 
   // Bell three times — "break is over, come back"
-  for (let i = 0; i < 3; i++) {
-    bell(1);
-    await sleep(350);
-  }
+  await bell(3);
 
   // Transition to IDLE_AFTER_BREAK
   state = AppState.IDLE_AFTER_BREAK;
