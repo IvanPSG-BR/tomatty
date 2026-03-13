@@ -232,14 +232,37 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Build binary
+# 7. Resolve source directory (local clone vs. curl | bash)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# When executed via `curl | bash`, BASH_SOURCE[0] is empty or "/dev/stdin" —
+# there is no local source tree to build from. In that case we clone the repo
+# into a temporary directory so the build step has everything it needs.
+
+REPO_URL="https://github.com/ivan-psg/tomatty.git"
+CLONED=false
+
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+if [[ -n "$SCRIPT_SOURCE" && "$SCRIPT_SOURCE" != "/dev/stdin" && -f "$SCRIPT_SOURCE" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+else
+  echo ""
+  info "Running via pipe — cloning repository to a temporary directory..."
+  TMPDIR_CLONE="$(mktemp -d)"
+  if ! git clone --depth=1 "$REPO_URL" "$TMPDIR_CLONE" 2>&1 | sed 's/^/    /'; then
+    die "Failed to clone repository. Check your internet connection and try again."
+  fi
+  SCRIPT_DIR="$TMPDIR_CLONE"
+  CLONED=true
+  success "Repository cloned to ${TMPDIR_CLONE}"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Build binary
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
 info "Building tomatty binary..."
-
-# Resolve script dir so this works when called from any directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Install npm dependencies if needed
 if [[ ! -d "$SCRIPT_DIR/node_modules" ]]; then
@@ -256,7 +279,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8. Install binary to /usr/local/bin
+# 9. Install binary to /usr/local/bin
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
@@ -265,8 +288,13 @@ info "Installing to /usr/local/bin/tomatty..."
 sudo install -m 755 "$SCRIPT_DIR/dist/tomatty" /usr/local/bin/tomatty
 success "Installed to /usr/local/bin/tomatty"
 
+# Clean up temporary clone if we created one
+if [[ "$CLONED" == "true" ]]; then
+  rm -rf "$TMPDIR_CLONE"
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 9. Done
+# 10. Done
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo ""
